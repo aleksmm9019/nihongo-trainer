@@ -60,6 +60,97 @@ function wrongClassConjugate(kana, type, form) {
 }
 
 /* ============================================================
+   Romaji conversion, dictionary lookup, verb-type detection
+   ============================================================ */
+
+const ROMAJI = {
+  a: "あ", i: "い", u: "う", e: "え", o: "お",
+  ka: "か", ki: "き", ku: "く", ke: "け", ko: "こ",
+  ga: "が", gi: "ぎ", gu: "ぐ", ge: "げ", go: "ご",
+  sa: "さ", shi: "し", si: "し", su: "す", se: "せ", so: "そ",
+  za: "ざ", ji: "じ", zi: "じ", zu: "ず", ze: "ぜ", zo: "ぞ",
+  ta: "た", chi: "ち", ti: "ち", tsu: "つ", tu: "つ", te: "て", to: "と",
+  da: "だ", de: "で", do: "ど",
+  na: "な", ni: "に", nu: "ぬ", ne: "ね", no: "の",
+  ha: "は", hi: "ひ", fu: "ふ", hu: "ふ", he: "へ", ho: "ほ",
+  ba: "ば", bi: "び", bu: "ぶ", be: "べ", bo: "ぼ",
+  pa: "ぱ", pi: "ぴ", pu: "ぷ", pe: "ぺ", po: "ぽ",
+  ma: "ま", mi: "み", mu: "む", me: "め", mo: "も",
+  ya: "や", yu: "ゆ", yo: "よ",
+  ra: "ら", ri: "り", ru: "る", re: "れ", ro: "ろ",
+  wa: "わ", wo: "を", nn: "ん",
+  kya: "きゃ", kyu: "きゅ", kyo: "きょ", gya: "ぎゃ", gyu: "ぎゅ", gyo: "ぎょ",
+  sha: "しゃ", shu: "しゅ", sho: "しょ", sya: "しゃ", syu: "しゅ", syo: "しょ",
+  ja: "じゃ", ju: "じゅ", jo: "じょ", jya: "じゃ", jyu: "じゅ", jyo: "じょ",
+  cha: "ちゃ", chu: "ちゅ", cho: "ちょ", tya: "ちゃ", tyu: "ちゅ", tyo: "ちょ",
+  nya: "にゃ", nyu: "にゅ", nyo: "にょ", hya: "ひゃ", hyu: "ひゅ", hyo: "ひょ",
+  bya: "びゃ", byu: "びゅ", byo: "びょ", pya: "ぴゃ", pyu: "ぴゅ", pyo: "ぴょ",
+  mya: "みゃ", myu: "みゅ", myo: "みょ", rya: "りゃ", ryu: "りゅ", ryo: "りょ",
+};
+
+function romajiToKana(input) {
+  const s = input.toLowerCase().replace(/[^a-z\-']/g, "");
+  let out = "", i = 0;
+  while (i < s.length) {
+    if (s[i] === "-") { out += "ー"; i++; continue; }
+    if (s[i] === "'") { i++; continue; } // n'i style separator
+    // doubled consonant -> small tsu (but not "nn", that's ん)
+    if (s[i] === s[i + 1] && s[i] !== "n" && !"aiueo".includes(s[i])) { out += "っ"; i++; continue; }
+    let matched = false;
+    for (const len of [3, 2, 1]) {
+      const chunk = s.substr(i, len);
+      if (ROMAJI[chunk]) { out += ROMAJI[chunk]; i += len; matched = true; break; }
+    }
+    if (!matched) {
+      if (s[i] === "n") out += "ん"; // n before consonant or at end
+      i++;
+    }
+  }
+  return out;
+}
+
+// Search the bundled JLPT dictionary by kanji, kana, romaji, or English.
+function searchDict(q) {
+  q = q.trim();
+  if (!q) return [];
+  const kana = /^[a-zA-Z\-']+$/.test(q) ? romajiToKana(q) : "";
+  const lower = q.toLowerCase();
+  const out = [];
+  for (const [w, k, m, lvl] of DICT) {
+    let score = -1;
+    const ml = m.toLowerCase();
+    if (w === q || k === q || (kana && k === kana)) score = 100;
+    else if (kana && kana.length >= 2 && k.startsWith(kana)) score = 70 - (k.length - kana.length);
+    else if (w.startsWith(q) || k.startsWith(q)) score = 65;
+    else if (lower.length >= 3 && ml.includes(lower)) {
+      score = ml === lower || ml.startsWith(lower + ",") ? 60
+        : ("," + ml).includes("," + lower) || (" " + ml).includes(" " + lower) ? 40 : 15;
+    }
+    if (score >= 0) out.push({ w, k, m, lvl, score });
+  }
+  return out.sort((a, b) => b.score - a.score || b.lvl - a.lvl).slice(0, 12);
+}
+
+// Godan verbs that end in -iru/-eru and masquerade as ichidan (matched on kanji form).
+const GODAN_TRAPS = ["帰る", "入る", "走る", "知る", "切る", "要る", "喋る", "滑る", "握る", "限る", "蹴る", "減る", "参る", "交じる", "混じる", "焦る", "散る"];
+
+function looksLikeVerb(meaning) {
+  const m = meaning.toLowerCase();
+  return m.startsWith("to ") || m.includes(", to ");
+}
+
+function guessVerbType(word, kana) {
+  if (kana.endsWith("する")) return "suru";
+  if (word === "来る" || kana === "くる") return "kuru";
+  const last = kana.slice(-1);
+  if (!"うくぐすつぬぶむる".includes(last)) return null;
+  if (last !== "る") return "godan";
+  if (GODAN_TRAPS.some(t => word.endsWith(t))) return "godan";
+  const prev = kana.slice(-2, -1);
+  return "いきぎしじちにひびぴみりえけげせぜてでねへべぺめれ".includes(prev) ? "ichidan" : "godan";
+}
+
+/* ============================================================
    SRS — simplified SM-2
    ============================================================ */
 
@@ -110,12 +201,17 @@ let S = load();
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (!d.custom) d.custom = { vocab: [], verbs: [] }; // migration from pre-AddWord saves
+      return d;
+    }
   } catch (e) { /* corrupted -> start fresh */ }
   return {
     cards: {},          // id -> SRS state (only once introduced)
     intro: {},          // dateStr -> {vocab, kanji} new cards introduced that day
     log: {},            // dateStr -> {reviews, correct, grammar, grammarCorrect}
+    custom: { vocab: [], verbs: [] }, // user-added words; vocab ids start with "c"
     settings: { newVocab: 8, newKanji: 3, furigana: true },
   };
 }
@@ -166,7 +262,10 @@ const DECKS = {
 };
 
 function deckOf(id) { return id.startsWith("k") ? "kanji" : "vocab"; }
-function itemById(id) { return (deckOf(id) === "kanji" ? KANJI : VOCAB).find(x => x.id === id); }
+function itemById(id) {
+  if (deckOf(id) === "kanji") return KANJI.find(x => x.id === id);
+  return VOCAB.find(x => x.id === id) || S.custom.vocab.find(x => x.id === id);
+}
 
 function dueCards() {
   const now = Date.now();
@@ -250,6 +349,10 @@ function showToday() {
       <button class="menu-btn" onclick="startParticles()">
         は・が・を Particle drill
         <span class="sub">fill in the blank — 10 questions</span>
+      </button>
+      <button class="menu-btn" onclick="showCheatsheet()">
+        📖 Conjugation cheat sheet
+        <span class="sub">godan / ichidan rules at a glance</span>
       </button>
     </div>
   `);
@@ -346,7 +449,7 @@ let G = null; // active grammar drill
 
 function startConjugation(chained) {
   const qs = [];
-  const verbs = pick(VERBS, 10);
+  const verbs = pick(VERBS.concat(S.custom.verbs), 10);
   for (const v of verbs) {
     const form = FORMS[Math.floor(Math.random() * FORMS.length)];
     const correct = conjugate(v.kana, v.type, form.key);
@@ -456,6 +559,195 @@ function answerDrill(idx) {
     <button class="menu-btn primary" onclick="G.i++; nextDrillQ()">Next</button>`;
 }
 
+/* ---------- add word ---------- */
+
+let ADD = null; // currently selected dictionary hit
+
+function showAdd() {
+  setTab("");
+  ADD = null;
+  render(`
+    <h2>＋ Add a word</h2>
+    <p class="muted">Type it any way you like — <i>oyogu</i>, およぐ, 泳ぐ, or "to swim".</p>
+    <form class="add-form" onsubmit="doSearch(); return false">
+      <input type="text" id="q" placeholder="oyogu" autocomplete="off" autocapitalize="none">
+      <button type="submit" class="menu-btn primary slim">Search</button>
+    </form>
+    <div id="results"></div>
+    <div id="confirm"></div>
+    <details class="manual">
+      <summary>Word not found? Add it manually</summary>
+      <input type="text" id="m-kana" placeholder="reading in kana, or romaji (required)">
+      <input type="text" id="m-jp" placeholder="kanji (optional)">
+      <input type="text" id="m-en" placeholder="meaning (required)">
+      <div class="chips" id="m-chips">
+        ${["none", "godan", "ichidan", "suru"].map(t => `<button type="button" class="chip ${t === "none" ? "sel" : ""}" data-t="${t}" onclick="selChip(this)">${t === "none" ? "not a verb" : t}</button>`).join("")}
+      </div>
+      <button class="menu-btn primary slim" onclick="addManual()">Add card</button>
+    </details>
+  `);
+  document.getElementById("q").focus();
+}
+
+function doSearch() {
+  const q = document.getElementById("q").value;
+  const hits = searchDict(q);
+  document.getElementById("confirm").innerHTML = "";
+  document.getElementById("results").innerHTML = hits.length
+    ? hits.map((h, i) => `
+      <button class="hit" onclick="pickHit(${i})">
+        <span class="row-jp">${esc(h.w)}</span>
+        <span class="row-kana">${esc(h.k)}</span>
+        <span class="row-en">${esc(h.m)}</span>
+        <span class="lvl">N${h.lvl}</span>
+      </button>`).join("")
+    : `<p class="muted">Nothing found in the JLPT N5–N1 dictionary. You can add it manually below, or check <a href="https://jisho.org/search/${encodeURIComponent(q)}" target="_blank">Jisho</a>.</p>`;
+  window.__hits = hits;
+}
+
+function pickHit(i) {
+  const h = window.__hits[i];
+  const isVerb = looksLikeVerb(h.m);
+  const guess = isVerb ? guessVerbType(h.w, h.k) : null;
+  ADD = h;
+  document.getElementById("confirm").innerHTML = `
+    <div class="confirm-card">
+      <div class="big-jp">${esc(h.w)}</div>
+      <div class="reading">${esc(h.k)}</div>
+      <div class="meaning">${esc(h.m)}</div>
+      ${isVerb ? `
+        <p class="muted">Looks like a verb — it will join the conjugation drills as:</p>
+        <div class="chips" id="v-chips">
+          ${["none", "godan", "ichidan", "suru"].map(t => `<button type="button" class="chip ${t === (guess || "none") ? "sel" : ""}" data-t="${t}" onclick="selChip(this)">${t === "none" ? "not a verb" : t}</button>`).join("")}
+        </div>` : ""}
+      <button class="menu-btn primary slim" onclick="confirmAdd()">Add card</button>
+    </div>`;
+}
+
+function selChip(el) {
+  el.parentElement.querySelectorAll(".chip").forEach(c => c.classList.remove("sel"));
+  el.classList.add("sel");
+}
+
+function chipValue(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return "none";
+  return el.querySelector(".chip.sel").dataset.t;
+}
+
+function confirmAdd() {
+  addCustomWord(ADD.w, ADD.k, ADD.m, chipValue("v-chips"), ADD.lvl);
+}
+
+function addManual() {
+  let kana = document.getElementById("m-kana").value.trim();
+  const en = document.getElementById("m-en").value.trim();
+  if (!kana || !en) return alert("Reading and meaning are required.");
+  if (/^[a-zA-Z\-']+$/.test(kana)) kana = romajiToKana(kana);
+  const jp = document.getElementById("m-jp").value.trim() || kana;
+  addCustomWord(jp, kana, en, chipValue("m-chips"), 0);
+}
+
+function addCustomWord(jp, kana, en, verbType, level) {
+  if (S.custom.vocab.some(v => v.jp === jp && v.kana === kana)) return alert("Already in your deck!");
+  const id = "c" + Date.now().toString(36);
+  S.custom.vocab.push({ id, jp, kana, en, level });
+  S.cards[id] = newCardState(); // due immediately — shows up in today's reviews
+  if (verbType && verbType !== "none") S.custom.verbs.push({ dict: jp, kana, en, type: verbType, custom: true });
+  save();
+  render(`
+    <div class="finish">
+      <div class="finish-emoji">✅</div>
+      <h2>${esc(jp)} added</h2>
+      <p class="muted">It's due for review right now${verbType && verbType !== "none" ? " and joins the conjugation drills" : ""}.</p>
+      <button class="menu-btn primary" onclick="showAdd()">Add another</button>
+      <button class="menu-btn" onclick="showToday()">Back</button>
+    </div>`);
+}
+
+function removeCustom(id) {
+  const v = S.custom.vocab.find(x => x.id === id);
+  if (!v || !confirm(`Remove ${v.jp} from your deck?`)) return;
+  S.custom.vocab = S.custom.vocab.filter(x => x.id !== id);
+  S.custom.verbs = S.custom.verbs.filter(x => !(x.dict === v.jp && x.kana === v.kana));
+  delete S.cards[id];
+  save();
+  showBrowse();
+}
+
+/* ---------- cheat sheet ---------- */
+
+function showCheatsheet() {
+  setTab("");
+  render(`
+    <h2>活用 Cheat sheet</h2>
+
+    <h3>Step 1 — which type is it?</h3>
+    <div class="cheat-box">
+      <p>1. Ends in <b>する</b> → <b>suru verb</b> (勉強する)</p>
+      <p>2. Is <b>来る</b>(くる) → <b>kuru</b> — fully irregular</p>
+      <p>3. Ends in <b>-iru / -eru</b> sound → usually <b>ichidan</b> (食べる, 見る, 起きる)</p>
+      <p>4. Everything else → <b>godan</b> (飲む, 買う, 話す)</p>
+      <p class="muted">⚠ Trap verbs: these end in -iru/-eru but are GODAN:<br>
+      帰る・入る・走る・知る・切る・要る・喋る・減る</p>
+    </div>
+
+    <h3>Ichidan — the easy ones</h3>
+    <div class="cheat-box">
+      <p>Drop <b>る</b>, attach anything:</p>
+      <table>
+        <tr><td>食べ<b>る</b></td><td>食べ<b>ます</b></td><td>食べ<b>て</b></td><td>食べ<b>ない</b></td><td>食べ<b>た</b></td></tr>
+        <tr><td>見<b>る</b></td><td>見<b>ます</b></td><td>見<b>て</b></td><td>見<b>ない</b></td><td>見<b>た</b></td></tr>
+      </table>
+    </div>
+
+    <h3>Godan — ます・ない: shift the vowel</h3>
+    <div class="cheat-box">
+      <p><b>ます形:</b> last kana → <b>i row</b> + ます　(飲む → 飲<b>み</b>ます)</p>
+      <p><b>ない形:</b> last kana → <b>a row</b> + ない　(飲む → 飲<b>ま</b>ない)</p>
+      <p class="muted">⚠ Verbs ending in う → <b>わ</b>ない: 買う → 買<b>わ</b>ない</p>
+      <table>
+        <tr><th>ends in</th><th>ます</th><th>ない</th><th>example</th></tr>
+        <tr><td>う</td><td>〜います</td><td>〜わない</td><td>買う→買います・買わない</td></tr>
+        <tr><td>く</td><td>〜きます</td><td>〜かない</td><td>書く→書きます・書かない</td></tr>
+        <tr><td>ぐ</td><td>〜ぎます</td><td>〜がない</td><td>泳ぐ→泳ぎます・泳がない</td></tr>
+        <tr><td>す</td><td>〜します</td><td>〜さない</td><td>話す→話します・話さない</td></tr>
+        <tr><td>つ</td><td>〜ちます</td><td>〜たない</td><td>待つ→待ちます・待たない</td></tr>
+        <tr><td>ぬ</td><td>〜にます</td><td>〜なない</td><td>死ぬ→死にます・死なない</td></tr>
+        <tr><td>ぶ</td><td>〜びます</td><td>〜ばない</td><td>遊ぶ→遊びます・遊ばない</td></tr>
+        <tr><td>む</td><td>〜みます</td><td>〜まない</td><td>飲む→飲みます・飲まない</td></tr>
+        <tr><td>る</td><td>〜ります</td><td>〜らない</td><td>作る→作ります・作らない</td></tr>
+      </table>
+    </div>
+
+    <h3>Godan — て・た: the te-form song</h3>
+    <div class="cheat-box">
+      <table>
+        <tr><th>ends in</th><th>て形</th><th>example</th></tr>
+        <tr><td>う・つ・る</td><td><b>って</b></td><td>買う→買って／待つ→待って／作る→作って</td></tr>
+        <tr><td>む・ぶ・ぬ</td><td><b>んで</b></td><td>飲む→飲んで／遊ぶ→遊んで／死ぬ→死んで</td></tr>
+        <tr><td>く</td><td><b>いて</b></td><td>書く→書いて</td></tr>
+        <tr><td>ぐ</td><td><b>いで</b></td><td>泳ぐ→泳いで</td></tr>
+        <tr><td>す</td><td><b>して</b></td><td>話す→話して</td></tr>
+      </table>
+      <p>た形 = same rules with <b>て→た, で→だ</b> (飲んで → 飲んだ)</p>
+      <p class="muted">⚠ 行く is special: 行<b>って</b>・行<b>った</b> (not いいて)</p>
+    </div>
+
+    <h3>The irregulars — just memorize these</h3>
+    <div class="cheat-box">
+      <table>
+        <tr><th></th><th>ます</th><th>て</th><th>ない</th><th>た</th></tr>
+        <tr><td>する</td><td>します</td><td>して</td><td>しない</td><td>した</td></tr>
+        <tr><td>来る(くる)</td><td>きます</td><td>きて</td><td><b>こ</b>ない</td><td>きた</td></tr>
+        <tr><td>ある</td><td>あります</td><td>あって</td><td><b>ない</b></td><td>あった</td></tr>
+      </table>
+    </div>
+
+    <button class="menu-btn" onclick="showToday()">Back</button>
+  `);
+}
+
 /* ---------- browse ---------- */
 
 function showBrowse() {
@@ -463,6 +755,12 @@ function showBrowse() {
   const learned = id => S.cards[id] ? "learned" : "";
   render(`
     <h2>Decks</h2>
+    <button class="menu-btn" onclick="showAdd()">＋ Add a word</button>
+    ${S.custom.vocab.length ? `
+    <details open>
+      <summary>My words (${S.custom.vocab.length})</summary>
+      <div class="list">${S.custom.vocab.map(v => `<div class="row learned"><span class="row-jp">${esc(v.jp)}</span><span class="row-kana">${esc(v.kana)}</span><span class="row-en">${esc(v.en)}</span><button class="del" onclick="removeCustom('${v.id}')">✕</button></div>`).join("")}</div>
+    </details>` : ""}
     <details>
       <summary>Vocabulary (${VOCAB.length}) — ${VOCAB.filter(v => S.cards[v.id]).length} learning</summary>
       <div class="list">${VOCAB.map(v => `<div class="row ${learned(v.id)}"><span class="row-jp">${v.jp}</span><span class="row-kana">${v.kana}</span><span class="row-en">${v.en}</span></div>`).join("")}</div>
@@ -496,7 +794,7 @@ function showStats() {
       <div class="stat"><b>${mature}</b><span>mature (3wk+)</span></div>
       <div class="stat"><b>${dueTomorrow}</b><span>due in 24h</span></div>
       <div class="stat"><b>${totalReviews}</b><span>total answers</span></div>
-      <div class="stat"><b>${VOCAB.length + KANJI.length - learning}</b><span>cards remaining</span></div>
+      <div class="stat"><b>${VOCAB.length + KANJI.length + S.custom.vocab.length - learning}</b><span>cards remaining</span></div>
     </div>
     <h3>Last 14 days</h3>
     <div class="history">

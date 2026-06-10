@@ -1,12 +1,13 @@
 // Offline-first service worker. Bump VERSION whenever any file changes
 // so phones pick up the new build.
-const VERSION = "v2";
+const VERSION = "v3";
 const CACHE = "nihongo-trainer-" + VERSION;
 const ASSETS = [
   ".",
   "index.html",
   "styles.css",
   "app.js",
+  "data/dict.js",
   "data/vocab.js",
   "data/kanji.js",
   "data/verbs.js",
