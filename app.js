@@ -116,7 +116,7 @@ function load() {
     cards: {},          // id -> SRS state (only once introduced)
     intro: {},          // dateStr -> {vocab, kanji} new cards introduced that day
     log: {},            // dateStr -> {reviews, correct, grammar, grammarCorrect}
-    settings: { newVocab: 8, newKanji: 3 },
+    settings: { newVocab: 8, newKanji: 3, furigana: true },
   };
 }
 
@@ -387,8 +387,17 @@ function startParticles(chained) {
   runDrill(qs, "Particles", null, true); // particles is the last stage of a chained session
 }
 
+// Converts 漢字[よみ] markup to <ruby> furigana, or strips the readings
+// entirely when furigana is switched off in Settings.
+function rubify(s) {
+  const RUBY = /([一-鿿々]+)\[([^\]]+)\]/g;
+  return S.settings.furigana === false
+    ? s.replace(RUBY, "$1")
+    : s.replace(RUBY, "<ruby>$1<rt>$2</rt></ruby>");
+}
+
 function particlePrompt(p) {
-  return `<div class="q-sentence">${p.s.replace(/＿/g, '<span class="blank">＿</span>')}</div>`;
+  return `<div class="q-sentence">${rubify(p.s).replace(/＿/g, '<span class="blank">＿</span>')}</div>`;
 }
 
 /* ---------- shared drill runner ---------- */
@@ -515,6 +524,11 @@ function showSettings() {
       <input type="range" min="0" max="10" value="${S.settings.newKanji}"
         oninput="document.getElementById('nkVal').textContent=this.value"
         onchange="S.settings.newKanji=+this.value; save()">
+    </label>
+    <label class="setting toggle">
+      <input type="checkbox" ${S.settings.furigana === false ? "" : "checked"}
+        onchange="S.settings.furigana=this.checked; save()">
+      Furigana on kanji in grammar drills
     </label>
     <h3>Backup</h3>
     <button class="menu-btn" onclick="exportProgress()">Export progress</button>

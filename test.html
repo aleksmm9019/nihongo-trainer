@@ -59,6 +59,19 @@ for (const [name, deck] of [["VOCAB", VOCAB], ["KANJI", KANJI]]) {
 const POOL = ["は","が","を","に","で","へ","と","から","まで","も","の","か"];
 eq(PARTICLES.filter(p => !p.twoBlanks && !POOL.includes(p.a)).length, 0, "particle answers in pool");
 eq(PARTICLES.filter(p => !p.s.includes("＿")).length, 0, "all particle sentences have a blank");
+// furigana markup: brackets balanced, readings are pure kana, no kanji left unannotated
+const KANJI_RE = /[一-鿿々]/;
+let badRuby = [];
+for (const p of PARTICLES) {
+  const stripped = p.s.replace(/([一-鿿々]+)\[([^\]]+)\]/g, (m, k, yomi) => /^[ぁ-ゖー]+$/.test(yomi) ? "" : m);
+  if (KANJI_RE.test(stripped) || stripped.includes("[") || stripped.includes("]")) badRuby.push(p.s);
+}
+eq(badRuby.join(" | "), "", "all particle kanji carry kana readings");
+// rubify produces ruby tags, and strips cleanly when furigana is off
+eq(rubify("私[わたし]です"), "<ruby>私<rt>わたし</rt></ruby>です", "rubify on");
+S.settings.furigana = false;
+eq(rubify("私[わたし]です"), "私です", "rubify off");
+S.settings.furigana = true;
 // every verb type is known
 eq(VERBS.filter(v => !["godan","ichidan","suru","kuru"].includes(v.type)).length, 0, "verb types valid");
 // SRS sanity
