@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>tests</title></head>
+<body>
+<main id="view"></main>
+<pre id="out"></pre>
+<script src="data/vocab.js"></script>
+<script src="data/kanji.js"></script>
+<script src="data/verbs.js"></script>
+<script src="data/particles.js"></script>
+<script src="app.js"></script>
+<script>
+const results = [];
+function eq(actual, expected, name) {
+  results.push((actual === expected ? "PASS " : `FAIL [${actual}] != [${expected}] `) + name);
+}
+
+// godan basics
+eq(conjugate("のむ","godan","masu"), "のみます", "nomu masu");
+eq(conjugate("のむ","godan","te"), "のんで", "nomu te");
+eq(conjugate("のむ","godan","ta"), "のんだ", "nomu ta");
+eq(conjugate("のむ","godan","nai"), "のまない", "nomu nai");
+eq(conjugate("かう","godan","nai"), "かわない", "kau nai (u->wa)");
+eq(conjugate("かう","godan","te"), "かって", "kau te");
+eq(conjugate("まつ","godan","te"), "まって", "matsu te");
+eq(conjugate("しぬ","godan","te"), "しんで", "shinu te");
+eq(conjugate("あそぶ","godan","te"), "あそんで", "asobu te");
+eq(conjugate("かく","godan","te"), "かいて", "kaku te");
+eq(conjugate("およぐ","godan","te"), "およいで", "oyogu te");
+eq(conjugate("およぐ","godan","ta"), "およいだ", "oyogu ta");
+eq(conjugate("はなす","godan","te"), "はなして", "hanasu te");
+eq(conjugate("はなす","godan","ta"), "はなした", "hanasu ta");
+// godan -ru and trap verbs
+eq(conjugate("はしる","godan","masu"), "はしります", "hashiru masu");
+eq(conjugate("かえる","godan","te"), "かえって", "kaeru te (trap verb)");
+eq(conjugate("はいる","godan","nai"), "はいらない", "hairu nai (trap verb)");
+// irregular godan
+eq(conjugate("いく","godan","te"), "いって", "iku te (irregular)");
+eq(conjugate("いく","godan","ta"), "いった", "iku ta (irregular)");
+eq(conjugate("ある","godan","nai"), "ない", "aru nai (irregular)");
+// ichidan
+eq(conjugate("たべる","ichidan","masu"), "たべます", "taberu masu");
+eq(conjugate("たべる","ichidan","te"), "たべて", "taberu te");
+eq(conjugate("たべる","ichidan","nai"), "たべない", "taberu nai");
+eq(conjugate("おきる","ichidan","ta"), "おきた", "okiru ta");
+// suru / kuru
+eq(conjugate("する","suru","masu"), "します", "suru masu");
+eq(conjugate("べんきょうする","suru","ta"), "べんきょうした", "benkyou-suru ta");
+eq(conjugate("べんきょうする","suru","nai"), "べんきょうしない", "benkyou-suru nai");
+eq(conjugate("くる","kuru","nai"), "こない", "kuru nai");
+eq(conjugate("くる","kuru","mashita"), "きました", "kuru mashita");
+
+// data integrity: unique ids
+for (const [name, deck] of [["VOCAB", VOCAB], ["KANJI", KANJI]]) {
+  const ids = new Set(deck.map(x => x.id));
+  eq(ids.size, deck.length, name + " ids unique");
+}
+// every particle answer is well-formed
+const POOL = ["は","が","を","に","で","へ","と","から","まで","も","の","か"];
+eq(PARTICLES.filter(p => !p.twoBlanks && !POOL.includes(p.a)).length, 0, "particle answers in pool");
+eq(PARTICLES.filter(p => !p.s.includes("＿")).length, 0, "all particle sentences have a blank");
+// every verb type is known
+eq(VERBS.filter(v => !["godan","ichidan","suru","kuru"].includes(v.type)).length, 0, "verb types valid");
+// SRS sanity
+const c = newCardState();
+gradeCard(c, 2); eq(c.ivl, 1, "new card Good -> 1 day");
+gradeCard(c, 2); eq(c.ivl, 3, "second Good -> 3 days");
+gradeCard(c, 0); eq(c.ivl, 0, "Again resets interval");
+
+const fails = results.filter(r => r.startsWith("FAIL"));
+document.getElementById("out").textContent =
+  `TESTRESULT ${fails.length === 0 ? "ALL_PASS" : "FAILURES"} ${results.length - fails.length}/${results.length}\n` + fails.join("\n");
+</script>
+</body>
+</html>

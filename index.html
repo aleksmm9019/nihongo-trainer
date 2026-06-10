@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>日本語 Trainer</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>日本語<span>trainer</span></h1>
+  </header>
+  <main id="view"></main>
+  <nav class="nav">
+    <button data-tab="today" class="active">今日<span>Today</span></button>
+    <button data-tab="browse">辞書<span>Browse</span></button>
+    <button data-tab="stats">統計<span>Stats</span></button>
+    <button data-tab="settings">設定<span>Settings</span></button>
+  </nav>
+  <script src="data/vocab.js"></script>
+  <script src="data/kanji.js"></script>
+  <script src="data/verbs.js"></script>
+  <script src="data/particles.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

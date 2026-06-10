@@ -1,0 +1,62 @@
+// Verbs for the conjugation trainer.
+// type: "godan" | "ichidan" | "suru" | "kuru"
+// kana is the dictionary-form reading; conjugation operates on kana so answers
+// are always typable/readable even before the kanji is learned.
+const VERBS = [
+  { dict: "食べる", kana: "たべる", en: "to eat", type: "ichidan", level: 5 },
+  { dict: "見る", kana: "みる", en: "to see, to watch", type: "ichidan", level: 5 },
+  { dict: "寝る", kana: "ねる", en: "to sleep", type: "ichidan", level: 5 },
+  { dict: "起きる", kana: "おきる", en: "to wake up", type: "ichidan", level: 5 },
+  { dict: "出る", kana: "でる", en: "to exit, to leave", type: "ichidan", level: 5 },
+  { dict: "教える", kana: "おしえる", en: "to teach", type: "ichidan", level: 5 },
+  { dict: "開ける", kana: "あける", en: "to open (something)", type: "ichidan", level: 5 },
+  { dict: "閉める", kana: "しめる", en: "to close (something)", type: "ichidan", level: 5 },
+  { dict: "借りる", kana: "かりる", en: "to borrow", type: "ichidan", level: 5 },
+  { dict: "降りる", kana: "おりる", en: "to get off", type: "ichidan", level: 5 },
+  { dict: "あげる", kana: "あげる", en: "to give", type: "ichidan", level: 5 },
+  { dict: "いる", kana: "いる", en: "to exist (animate)", type: "ichidan", level: 5 },
+
+  { dict: "飲む", kana: "のむ", en: "to drink", type: "godan", level: 5 },
+  { dict: "読む", kana: "よむ", en: "to read", type: "godan", level: 5 },
+  { dict: "休む", kana: "やすむ", en: "to rest", type: "godan", level: 5 },
+  { dict: "聞く", kana: "きく", en: "to listen, to ask", type: "godan", level: 5 },
+  { dict: "書く", kana: "かく", en: "to write", type: "godan", level: 5 },
+  { dict: "歩く", kana: "あるく", en: "to walk", type: "godan", level: 5 },
+  { dict: "働く", kana: "はたらく", en: "to work", type: "godan", level: 5 },
+  { dict: "泳ぐ", kana: "およぐ", en: "to swim", type: "godan", level: 5 },
+  { dict: "話す", kana: "はなす", en: "to speak", type: "godan", level: 5 },
+  { dict: "貸す", kana: "かす", en: "to lend", type: "godan", level: 5 },
+  { dict: "買う", kana: "かう", en: "to buy", type: "godan", level: 5 },
+  { dict: "会う", kana: "あう", en: "to meet", type: "godan", level: 5 },
+  { dict: "使う", kana: "つかう", en: "to use", type: "godan", level: 5 },
+  { dict: "習う", kana: "ならう", en: "to learn", type: "godan", level: 5 },
+  { dict: "歌う", kana: "うたう", en: "to sing", type: "godan", level: 5 },
+  { dict: "洗う", kana: "あらう", en: "to wash", type: "godan", level: 5 },
+  { dict: "言う", kana: "いう", en: "to say", type: "godan", level: 5 },
+  { dict: "思う", kana: "おもう", en: "to think", type: "godan", level: 5 },
+  { dict: "待つ", kana: "まつ", en: "to wait", type: "godan", level: 5 },
+  { dict: "立つ", kana: "たつ", en: "to stand", type: "godan", level: 5 },
+  { dict: "持つ", kana: "もつ", en: "to hold, to have", type: "godan", level: 5 },
+  { dict: "売る", kana: "うる", en: "to sell", type: "godan", level: 5 },
+  { dict: "作る", kana: "つくる", en: "to make", type: "godan", level: 5 },
+  { dict: "座る", kana: "すわる", en: "to sit", type: "godan", level: 5 },
+  { dict: "乗る", kana: "のる", en: "to ride", type: "godan", level: 5 },
+  { dict: "撮る", kana: "とる", en: "to take (a photo)", type: "godan", level: 5 },
+  { dict: "分かる", kana: "わかる", en: "to understand", type: "godan", level: 5 },
+  { dict: "終わる", kana: "おわる", en: "to end", type: "godan", level: 5 },
+  // NB: 帰る・走る・入る・知る look ichidan (end in -iru/-eru) but are godan — classic trap verbs.
+  { dict: "帰る", kana: "かえる", en: "to return home", type: "godan", level: 5 },
+  { dict: "走る", kana: "はしる", en: "to run", type: "godan", level: 5 },
+  { dict: "入る", kana: "はいる", en: "to enter", type: "godan", level: 5 },
+  { dict: "知る", kana: "しる", en: "to know", type: "godan", level: 5 },
+  { dict: "死ぬ", kana: "しぬ", en: "to die", type: "godan", level: 5 },
+  { dict: "遊ぶ", kana: "あそぶ", en: "to play", type: "godan", level: 5 },
+  { dict: "行く", kana: "いく", en: "to go", type: "godan", level: 5 }, // te/ta irregular, handled in engine
+  { dict: "ある", kana: "ある", en: "to exist (inanimate)", type: "godan", level: 5 }, // nai-form irregular (ない)
+
+  { dict: "する", kana: "する", en: "to do", type: "suru", level: 5 },
+  { dict: "勉強する", kana: "べんきょうする", en: "to study", type: "suru", level: 5 },
+  { dict: "料理する", kana: "りょうりする", en: "to cook", type: "suru", level: 5 },
+  { dict: "電話する", kana: "でんわする", en: "to phone", type: "suru", level: 5 },
+  { dict: "来る", kana: "くる", en: "to come", type: "kuru", level: 5 },
+];
