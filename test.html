@@ -9,6 +9,8 @@
 <script src="data/kanji.js"></script>
 <script src="data/verbs.js"></script>
 <script src="data/particles.js"></script>
+<script src="data/grammar.js"></script>
+<script src="data/sentences.js"></script>
 <script src="app.js"></script>
 <script>
 const results = [];
@@ -115,6 +117,32 @@ S.settings.prodCards = false; S.settings.listenCards = false;
 eq(cardMode("v001"), "recog", "modes off -> recognition");
 delete S.cards["v001"]; delete S.cards["k001"];
 S.settings.prodCards = true; S.settings.listenCards = true;
+// grammar data integrity
+eq(new Set(GRAMMAR.map(g => g.id)).size, GRAMMAR.length, "grammar ids unique");
+eq(GRAMMAR.filter(g => !g.id.startsWith("g")).length, 0, "grammar ids start with g");
+eq(GRAMMAR.filter(g => g.questions.some(q => !q.choices.includes(q.a))).length, 0, "every grammar answer is among its choices");
+eq(GRAMMAR.filter(g => g.questions.some(q => !q.q.includes("＿＿"))).length, 0, "every grammar question has a blank");
+eq(GRAMMAR.filter(g => g.questions.some(q => new Set(q.choices).size !== q.choices.length)).length, 0, "grammar choices have no duplicates");
+// all grammar kanji annotated with readings (questions + examples)
+let badG = [];
+for (const g of GRAMMAR) {
+  for (const s of [...g.questions.map(q => q.q), ...g.examples.map(e => e[0])]) {
+    const stripped = s.replace(/([一-鿿々]+)\[([^\]]+)\]/g, (m, k, yomi) => /^[ぁ-ゖー]+$/.test(yomi) ? "" : m);
+    if (/[一-鿿々]/.test(stripped) || stripped.includes("[")) badG.push(s);
+  }
+}
+eq(badG.join(" | "), "", "all grammar kanji carry kana readings");
+// grammar scheduling: id routing and due/new logic
+eq(deckOf("g001"), "grammar", "deckOf grammar");
+eq(itemById("g001").id, "g001", "itemById finds grammar");
+S.cards["g001"] = newCardState();
+eq(dueCards().includes("g001"), false, "grammar excluded from flashcard queue");
+eq(dueGrammar().includes("g001"), true, "grammar due in its own queue");
+delete S.cards["g001"];
+// sentence data integrity
+eq(SENTENCES.length >= 300, true, "300+ sentences");
+eq(SENTENCES.filter(s => s.length !== 3).length, 0, "sentence rows well-formed");
+eq(SENTENCES.filter(([jp, en, t]) => !jp.includes(t)).length, 0, "cloze target present in every sentence");
 // SRS sanity
 const c = newCardState();
 gradeCard(c, 2); eq(c.ivl, 1, "new card Good -> 1 day");

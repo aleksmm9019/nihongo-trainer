@@ -288,15 +288,29 @@ const DECKS = {
   },
 };
 
-function deckOf(id) { return id.startsWith("k") ? "kanji" : "vocab"; }
+function deckOf(id) { return id[0] === "k" ? "kanji" : id[0] === "g" ? "grammar" : "vocab"; }
 function itemById(id) {
   if (deckOf(id) === "kanji") return KANJI.find(x => x.id === id);
+  if (deckOf(id) === "grammar") return GRAMMAR.find(x => x.id === id);
   return VOCAB.find(x => x.id === id) || S.custom.vocab.find(x => x.id === id);
 }
 
+// flashcard queue: vocab + kanji only (grammar reviews have their own flow)
 function dueCards() {
   const now = Date.now();
-  return Object.keys(S.cards).filter(id => S.cards[id].due <= now && itemById(id));
+  return Object.keys(S.cards).filter(id => deckOf(id) !== "grammar" && S.cards[id].due <= now && itemById(id));
+}
+
+function dueGrammar() {
+  const now = Date.now();
+  return Object.keys(S.cards).filter(id => deckOf(id) === "grammar" && S.cards[id].due <= now && itemById(id));
+}
+
+// one new grammar point per day keeps lessons digestible
+function newGrammarPoint() {
+  const introToday = (S.intro[todayStr()] || {}).grammar || 0;
+  if (introToday >= 1) return null;
+  return GRAMMAR.find(g => !S.cards[g.id]) || null;
 }
 
 function newAvailable(deck) {
@@ -351,6 +365,7 @@ function showToday() {
   setTab("today");
   const due = dueCards();
   const nv = newAvailable("vocab"), nk = newAvailable("kanji");
+  const gDue = dueGrammar().length, gNew = newGrammarPoint();
   const st = streak();
   render(`
     <div class="hero">
@@ -369,6 +384,10 @@ function showToday() {
         New cards <span class="badge">${nv.remaining + nk.remaining}</span>
         <span class="sub">${nv.remaining} vocab · ${nk.remaining} kanji left today</span>
       </button>
+      <button class="menu-btn" onclick="startGrammar()" ${gDue + (gNew ? 1 : 0) ? "" : "disabled"}>
+        文法 Grammar <span class="badge">${gDue + (gNew ? 1 : 0)}</span>
+        <span class="sub">${gNew ? "1 new lesson · " : ""}${gDue} reviews due</span>
+      </button>
       <button class="menu-btn" onclick="startConjugation()">
         活用 Conjugation drill
         <span class="sub">ます・て・ない・た forms — 10 questions</span>
@@ -376,6 +395,10 @@ function showToday() {
       <button class="menu-btn" onclick="startParticles()">
         は・が・を Particle drill
         <span class="sub">fill in the blank — 10 questions</span>
+      </button>
+      <button class="menu-btn" onclick="startSentences()">
+        文 Sentence drill
+        <span class="sub">real sentences, fill in the word — 10 questions</span>
       </button>
       <button class="menu-btn" onclick="showCheatsheet()">
         📖 Conjugation cheat sheet
@@ -403,8 +426,8 @@ function startFullSession() {
   const nv = newAvailable("vocab"), nk = newAvailable("kanji");
   const fresh = shuffle([...introduceNew("vocab", nv.remaining), ...introduceNew("kanji", nk.remaining)]);
   const queue = [...due, ...fresh];
-  if (!queue.length) return startConjugation(true);
-  runCards(queue, "Session", () => startConjugation(true));
+  if (!queue.length) return startGrammar(true);
+  runCards(queue, "Session", () => startGrammar(true));
 }
 
 function runCards(queue, title, onDone) {
@@ -503,6 +526,137 @@ function answer(grade) {
   Q.done++;
   save();
   nextCard();
+}
+
+/* ---------- grammar track ---------- */
+
+let GR = null; // active grammar session
+
+function grammarLessonHTML(g) {
+  return `
+    <div class="lesson">
+      <h2>${g.title}</h2>
+      <div class="structure">${esc(g.structure)}</div>
+      <p>${g.explain}</p>
+      ${g.examples.map(e => `
+        <div class="g-ex">
+          <div class="g-jp">${rubify(e[0])}</div>
+          <div class="g-en">${e[1]}</div>
+          <button class="speak-btn small" onclick="speak('${stripRuby(e[0])}')">🔊</button>
+        </div>`).join("")}
+    </div>`;
+}
+
+function startGrammar(chained) {
+  const fresh = [];
+  const np = newGrammarPoint();
+  if (np) {
+    S.cards[np.id] = newCardState();
+    const intro = S.intro[todayStr()] || (S.intro[todayStr()] = { vocab: 0, kanji: 0 });
+    intro.grammar = (intro.grammar || 0) + 1;
+    save();
+    fresh.push(np.id);
+  }
+  const queue = [...fresh, ...shuffle(dueGrammar().filter(id => !fresh.includes(id)))];
+  const onDone = chained ? () => startConjugation(true) : null;
+  if (!queue.length) return onDone ? onDone() : showToday();
+  GR = { queue, onDone, total: queue.length, done: 0 };
+  nextGrammar();
+}
+
+function nextGrammar() {
+  if (!GR.queue.length) {
+    const after = GR.onDone;
+    GR = null;
+    if (after) return after();
+    return render(`
+      <div class="finish">
+        <div class="finish-emoji">🎉</div>
+        <h2>Grammar done!</h2>
+        <button class="menu-btn primary" onclick="showToday()">Back</button>
+      </div>`);
+  }
+  const id = GR.queue[0];
+  const g = itemById(id);
+  if (S.cards[id].reps === 0) {
+    render(`
+      <div class="progress"><div style="width:${(GR.done / GR.total) * 100}%"></div></div>
+      <div class="new-tag inline">NEW GRAMMAR</div>
+      ${grammarLessonHTML(g)}
+      <button class="menu-btn primary" onclick="grammarQuiz()">Got it — quiz me ▶</button>
+    `);
+  } else {
+    grammarQuiz();
+  }
+}
+
+function grammarQuiz() {
+  const id = GR.queue[0];
+  const g = itemById(id);
+  const q = g.questions[Math.floor(Math.random() * g.questions.length)];
+  GR.q = q;
+  GR.choices = shuffle(q.choices.slice());
+  render(`
+    <div class="progress"><div style="width:${(GR.done / GR.total) * 100}%"></div></div>
+    <div class="drill-q">
+      <div class="q-form">${g.title}</div>
+      <div class="q-sentence">${rubify(q.q).replace(/＿＿/g, '<span class="blank">＿＿</span>')}</div>
+      <div class="q-en">${q.en}</div>
+    </div>
+    <div class="choices" id="choices">
+      ${GR.choices.map((c, i) => `<button class="choice" onclick="answerGrammar(${i})">${esc(c)}</button>`).join("")}
+    </div>
+    <div id="feedback"></div>
+  `);
+}
+
+function answerGrammar(idx) {
+  const ok = GR.choices[idx] === GR.q.a;
+  const id = GR.queue.shift();
+  gradeCard(S.cards[id], ok ? 2 : 0);
+  logEvent("grammar", ok);
+  if (!ok) {
+    GR.queue.splice(Math.min(2, GR.queue.length), 0, id); // see it again shortly
+    GR.total++;
+  }
+  GR.done++;
+  save();
+  document.querySelectorAll(".choice").forEach((b, i) => {
+    b.disabled = true;
+    if (GR.choices[i] === GR.q.a) b.classList.add("right");
+    else if (i === idx) b.classList.add("wrong");
+  });
+  const full = stripRuby(GR.q.q).replace(/＿＿/, GR.q.a);
+  document.getElementById("feedback").innerHTML = `
+    <div class="why ${ok ? "ok" : "no"}">
+      <b>${ok ? "正解！" : "→ " + esc(GR.q.a)}</b> ${esc(full)}
+      <div class="why-en">${GR.q.en}</div>
+    </div>
+    <button class="menu-btn primary" onclick="nextGrammar()">Next</button>`;
+  speak(full);
+}
+
+function showLesson(id) {
+  const g = itemById(id);
+  render(`${grammarLessonHTML(g)}<button class="menu-btn" onclick="showBrowse()">Back</button>`);
+}
+
+/* ---------- sentence drill ---------- */
+
+function startSentences() {
+  const qs = pick(SENTENCES, 10).map(([jp, en, target]) => {
+    let pool = VOCAB.map(v => v.jp).filter(w => w !== target && Math.abs(w.length - target.length) <= 1);
+    if (pool.length < 3) pool = VOCAB.map(v => v.jp).filter(w => w !== target);
+    const choices = shuffle([target, ...pick(pool, 3)]);
+    return {
+      prompt: `<div class="q-sentence">${esc(jp).replace(target, '<span class="blank">＿＿</span>')}</div><div class="q-en">${esc(en)}</div>`,
+      choices,
+      correct: target,
+      why: esc(jp),
+      speakText: jp,
+    };
+  });
+  runDrill(qs, "Sentences");
 }
 
 /* ---------- conjugation drill ---------- */
@@ -851,6 +1005,10 @@ function showBrowse() {
       <summary>Verbs (${VERBS.length})</summary>
       <div class="list">${VERBS.map(v => `<div class="row"><span class="row-jp">${v.dict}</span><span class="row-kana">${v.kana} · ${v.type}</span><span class="row-en">${v.en}</span></div>`).join("")}</div>
     </details>
+    <details>
+      <summary>Grammar (${GRAMMAR.length}) — ${GRAMMAR.filter(g => S.cards[g.id]).length} learning</summary>
+      <div class="list">${GRAMMAR.map(g => `<div class="row ${learned(g.id)}" onclick="showLesson('${g.id}')" style="cursor:pointer"><span class="row-en" style="text-align:left">${g.title}</span></div>`).join("")}</div>
+    </details>
   `);
 }
 
@@ -872,7 +1030,7 @@ function showStats() {
       <div class="stat"><b>${mature}</b><span>mature (3wk+)</span></div>
       <div class="stat"><b>${dueTomorrow}</b><span>due in 24h</span></div>
       <div class="stat"><b>${totalReviews}</b><span>total answers</span></div>
-      <div class="stat"><b>${VOCAB.length + KANJI.length + S.custom.vocab.length - learning}</b><span>cards remaining</span></div>
+      <div class="stat"><b>${VOCAB.length + KANJI.length + GRAMMAR.length + S.custom.vocab.length - learning}</b><span>cards remaining</span></div>
     </div>
     <h3>Last 14 days</h3>
     <div class="history">
