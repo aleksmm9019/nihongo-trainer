@@ -60,6 +60,33 @@ function wrongClassConjugate(kana, type, form) {
 }
 
 /* ============================================================
+   Audio — on-device Japanese text-to-speech
+   ============================================================ */
+
+let JA_VOICE = null;
+
+function pickVoice() {
+  const vs = speechSynthesis.getVoices().filter(v => v.lang.replace("_", "-").startsWith("ja"));
+  // prefer an offline (on-device) voice so audio works in tunnels
+  JA_VOICE = vs.find(v => v.localService) || vs[0] || null;
+}
+
+if ("speechSynthesis" in window) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+
+function speak(text) {
+  if (!("speechSynthesis" in window) || S.settings.audio === false || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "ja-JP";
+  if (JA_VOICE) u.voice = JA_VOICE;
+  u.rate = 0.9;
+  speechSynthesis.speak(u);
+}
+
+/* ============================================================
    Romaji conversion, dictionary lookup, verb-type detection
    ============================================================ */
 
@@ -212,7 +239,7 @@ function load() {
     intro: {},          // dateStr -> {vocab, kanji} new cards introduced that day
     log: {},            // dateStr -> {reviews, correct, grammar, grammarCorrect}
     custom: { vocab: [], verbs: [] }, // user-added words; vocab ids start with "c"
-    settings: { newVocab: 8, newKanji: 3, furigana: true },
+    settings: { newVocab: 8, newKanji: 3, furigana: true, audio: true, autoSpeak: true, prodCards: true, listenCards: true },
   };
 }
 
@@ -386,6 +413,24 @@ function runCards(queue, title, onDone) {
   nextCard();
 }
 
+// Pick how this review is prompted. New cards and kanji are always
+// recognition; familiar vocab mixes in production / listening prompts.
+function cardMode(id) {
+  if (deckOf(id) === "kanji" || S.cards[id].reps === 0) return "recog";
+  const modes = ["recog"];
+  if (S.settings.prodCards !== false) modes.push("prod");
+  if (S.settings.listenCards !== false && "speechSynthesis" in window) modes.push("listen");
+  return modes[Math.floor(Math.random() * modes.length)];
+}
+
+function speakBtn() { return `<button class="speak-btn" onclick="speakCurrent()" title="play audio">🔊</button>`; }
+
+function speakCurrent() {
+  const it = Q && Q.cur && Q.cur.item;
+  if (!it) return;
+  speak(it.kana || (it.examples ? it.examples[0][1] : ""));
+}
+
 function nextCard() {
   if (!Q.queue.length) {
     const after = Q.onDone, total = Q.total;
@@ -401,19 +446,35 @@ function nextCard() {
   }
   const id = Q.queue[0];
   const item = itemById(id);
-  const deck = DECKS[deckOf(id)];
+  const mode = cardMode(id);
+  Q.cur = { id, item, mode };
   const isNew = S.cards[id].reps === 0;
+  let front, back;
+  if (deckOf(id) === "kanji") {
+    front = DECKS.kanji.front(item);
+    back = DECKS.kanji.back(item) + speakBtn();
+  } else if (mode === "prod") {
+    front = `<div class="prod-label">Say it in Japanese</div><div class="prod-en">${item.en}</div>`;
+    back = `<div class="big-jp">${item.jp}</div><div class="reading">${item.kana}</div>${speakBtn()}`;
+  } else if (mode === "listen") {
+    front = `<div class="prod-label">What did you hear?</div><button class="speak-big" onclick="speakCurrent()">🔊</button>`;
+    back = `<div class="big-jp">${item.jp}</div><div class="reading">${item.kana}</div><div class="meaning">${item.en}</div>${speakBtn()}`;
+  } else {
+    front = DECKS.vocab.front(item);
+    back = DECKS.vocab.back(item) + speakBtn();
+  }
   render(`
     <div class="progress"><div style="width:${(Q.done / Q.total) * 100}%"></div></div>
     <div class="card" id="card">
       ${isNew ? '<div class="new-tag">NEW</div>' : ""}
-      <div class="card-front">${deck.front(item)}</div>
-      <div class="card-back hidden" id="back">${deck.back(item)}</div>
+      <div class="card-front">${front}</div>
+      <div class="card-back hidden" id="back">${back}</div>
     </div>
     <div class="answer-area" id="answerArea">
       <button class="show-btn" onclick="flipCard()">Show answer</button>
     </div>
   `);
+  if (mode === "listen") speakCurrent();
 }
 
 function flipCard() {
@@ -427,6 +488,7 @@ function flipCard() {
       <button class="grade good" onclick="answer(2)">Good<span>${intervalPreview(c, 2)}</span></button>
       <button class="grade easy" onclick="answer(3)">Easy<span>${intervalPreview(c, 3)}</span></button>
     </div>`;
+  if (S.settings.autoSpeak !== false && Q.cur.mode !== "listen") speakCurrent();
 }
 
 function answer(grade) {
@@ -467,6 +529,7 @@ function startConjugation(chained) {
       choices: shuffle([correct, ...[...wrongs].slice(0, 3)]),
       correct,
       why: form.hint,
+      speakText: correct,
     });
   }
   runDrill(qs, "Conjugation", chained ? () => startParticles(true) : null);
@@ -480,23 +543,37 @@ function startParticles(chained) {
     let choices;
     if (p.twoBlanks) {
       choices = shuffle(["から / まで", "まで / から", "に / まで", "から / に"]);
-      return { prompt: particlePrompt(p), choices, correct: "から / まで", why: p.why, en: p.en };
+      return { prompt: particlePrompt(p), choices, correct: "から / まで", why: p.why, en: p.en, speakText: particleSpeakText(p) };
     }
     const banned = new Set([p.a, ...(p.alts || [])]);
     const wrongs = pick(ALL_P.filter(x => !banned.has(x)), 3);
     choices = shuffle([p.a, ...wrongs]);
-    return { prompt: particlePrompt(p), choices, correct: p.a, why: p.why, en: p.en };
+    return { prompt: particlePrompt(p), choices, correct: p.a, why: p.why, en: p.en, speakText: particleSpeakText(p) };
   });
   runDrill(qs, "Particles", null, true); // particles is the last stage of a chained session
 }
 
 // Converts 漢字[よみ] markup to <ruby> furigana, or strips the readings
 // entirely when furigana is switched off in Settings.
+const RUBY_RE = /([一-鿿々]+)\[([^\]]+)\]/g;
+
+function stripRuby(s) { return s.replace(RUBY_RE, "$1"); }
+
 function rubify(s) {
-  const RUBY = /([一-鿿々]+)\[([^\]]+)\]/g;
   return S.settings.furigana === false
-    ? s.replace(RUBY, "$1")
-    : s.replace(RUBY, "<ruby>$1<rt>$2</rt></ruby>");
+    ? stripRuby(s)
+    : s.replace(RUBY_RE, "<ruby>$1<rt>$2</rt></ruby>");
+}
+
+// The full sentence with the blank(s) filled in — what the TTS voice reads aloud.
+function particleSpeakText(p) {
+  const plain = stripRuby(p.s);
+  if (p.twoBlanks) {
+    const parts = p.a.split("/");
+    let i = 0;
+    return plain.replace(/＿/g, () => parts[i++]);
+  }
+  return plain.replace(/＿/g, p.a);
 }
 
 function particlePrompt(p) {
@@ -557,6 +634,7 @@ function answerDrill(idx) {
       <b>${ok ? "正解！" : "→ " + esc(q.correct)}</b> ${q.why}${q.en && !G.hasHint ? `<div class="why-en">${q.en}</div>` : ""}
     </div>
     <button class="menu-btn primary" onclick="G.i++; nextDrillQ()">Next</button>`;
+  speak(q.speakText); // hear the correct form/sentence either way
 }
 
 /* ---------- add word ---------- */
@@ -827,6 +905,28 @@ function showSettings() {
       <input type="checkbox" ${S.settings.furigana === false ? "" : "checked"}
         onchange="S.settings.furigana=this.checked; save()">
       Furigana on kanji in grammar drills
+    </label>
+    <h3>Audio</h3>
+    <label class="setting toggle">
+      <input type="checkbox" ${S.settings.audio === false ? "" : "checked"}
+        onchange="S.settings.audio=this.checked; save()">
+      Japanese audio (text-to-speech)
+    </label>
+    <label class="setting toggle">
+      <input type="checkbox" ${S.settings.autoSpeak === false ? "" : "checked"}
+        onchange="S.settings.autoSpeak=this.checked; save()">
+      Auto-play word when a card flips
+    </label>
+    <h3>Card types</h3>
+    <label class="setting toggle">
+      <input type="checkbox" ${S.settings.prodCards === false ? "" : "checked"}
+        onchange="S.settings.prodCards=this.checked; save()">
+      Production cards (English → Japanese)
+    </label>
+    <label class="setting toggle">
+      <input type="checkbox" ${S.settings.listenCards === false ? "" : "checked"}
+        onchange="S.settings.listenCards=this.checked; save()">
+      Listening cards (audio first)
     </label>
     <h3>Backup</h3>
     <button class="menu-btn" onclick="exportProgress()">Export progress</button>

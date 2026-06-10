@@ -101,6 +101,20 @@ eq(searchDict("").length, 0, "dict search empty");
 // dictionary integrity
 eq(DICT.length > 7000, true, "dict has 7000+ entries");
 eq(DICT.filter(d => d.length !== 4 || ![1,2,3,4,5].includes(d[3])).length, 0, "dict rows well-formed");
+// speech text generation
+eq(stripRuby("私[わたし]は学生[がくせい]です"), "私は学生です", "stripRuby");
+eq(particleSpeakText({s:"水[みず]＿飲[の]みます。", a:"を"}), "水を飲みます。", "particle speak text");
+eq(particleSpeakText({s:"九時[くじ]＿五時[ごじ]＿働[はたら]きます。", a:"から/まで", twoBlanks:true}), "九時から五時まで働きます。", "two-blank speak text");
+// card modes: new cards and kanji always recognition
+S.cards["v001"] = newCardState();
+eq(cardMode("v001"), "recog", "new card -> recognition");
+S.cards["k001"] = newCardState(); S.cards["k001"].reps = 5;
+eq(cardMode("k001"), "recog", "kanji always recognition");
+S.cards["v001"].reps = 5;
+S.settings.prodCards = false; S.settings.listenCards = false;
+eq(cardMode("v001"), "recog", "modes off -> recognition");
+delete S.cards["v001"]; delete S.cards["k001"];
+S.settings.prodCards = true; S.settings.listenCards = true;
 // SRS sanity
 const c = newCardState();
 gradeCard(c, 2); eq(c.ivl, 1, "new card Good -> 1 day");
