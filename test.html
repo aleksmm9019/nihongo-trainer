@@ -143,6 +143,11 @@ delete S.cards["g001"];
 eq(SENTENCES.length >= 300, true, "300+ sentences");
 eq(SENTENCES.filter(s => s.length !== 3).length, 0, "sentence rows well-formed");
 eq(SENTENCES.filter(([jp, en, t]) => !jp.includes(t)).length, 0, "cloze target present in every sentence");
+// voice ranking: natural > enhanced/siri > google > offline-default
+const mk = (name, local) => ({ name, localService: local });
+eq(voiceScore(mk("Microsoft Nanami Online (Natural)", false)) > voiceScore(mk("Kyoko (Enhanced)", true)), true, "natural beats enhanced");
+eq(voiceScore(mk("Kyoko (Enhanced)", true)) > voiceScore(mk("Google 日本語", false)), true, "enhanced beats google");
+eq(voiceScore(mk("Google 日本語", false)) > voiceScore(mk("Microsoft Haruka", true)), true, "google beats plain local");
 // SRS sanity
 const c = newCardState();
 gradeCard(c, 2); eq(c.ivl, 1, "new card Good -> 1 day");

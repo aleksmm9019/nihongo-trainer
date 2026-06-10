@@ -65,15 +65,24 @@ function wrongClassConjugate(kana, type, form) {
 
 let JA_VOICE = null;
 
-function pickVoice() {
-  const vs = speechSynthesis.getVoices().filter(v => v.lang.replace("_", "-").startsWith("ja"));
-  // prefer an offline (on-device) voice so audio works in tunnels
-  JA_VOICE = vs.find(v => v.localService) || vs[0] || null;
+function jaVoices() {
+  return speechSynthesis.getVoices().filter(v => v.lang.replace("_", "-").toLowerCase().startsWith("ja"));
 }
 
-if ("speechSynthesis" in window) {
-  pickVoice();
-  speechSynthesis.onvoiceschanged = pickVoice;
+// Natural/neural voices first; the compact system defaults sound robotic.
+function voiceScore(v) {
+  const n = v.name.toLowerCase();
+  if (n.includes("natural") || n.includes("neural")) return 4;
+  if (n.includes("enhanced") || n.includes("premium") || n.includes("siri")) return 3;
+  if (n.includes("google")) return 2;
+  if (v.localService) return 1;
+  return 0;
+}
+
+function pickVoice() {
+  const vs = jaVoices();
+  const saved = S.settings.voiceName ? vs.find(v => v.name === S.settings.voiceName) : null;
+  JA_VOICE = saved || vs.slice().sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null;
 }
 
 function speak(text) {
@@ -1075,6 +1084,18 @@ function showSettings() {
         onchange="S.settings.autoSpeak=this.checked; save()">
       Auto-play word when a card flips
     </label>
+    <label class="setting">Voice
+      <select id="voiceSel" onchange="setVoice(this.value)">
+        <option value="">Auto (most natural available)</option>
+        ${("speechSynthesis" in window ? jaVoices() : []).map(v =>
+          `<option value="${esc(v.name)}" ${S.settings.voiceName === v.name ? "selected" : ""}>${esc(v.name)}${v.localService ? " · offline" : " · online"}</option>`).join("")}
+      </select>
+    </label>
+    <button class="menu-btn slim" onclick="speak('こんにちは。日本語の練習をしましょう。')">▶ Test voice</button>
+    <p class="muted">Voices come from your device. For a much more natural voice:<br>
+      <b>iPhone:</b> Settings → Accessibility → Spoken Content → Voices → Japanese → download <b>Kyoko (Enhanced)</b> or a Siri voice, then pick it here.<br>
+      <b>Android:</b> install "Speech Recognition &amp; Synthesis" / Google Japanese TTS data.<br>
+      Voices marked <b>online</b> sound best but need a connection; <b>offline</b> ones work in tunnels.</p>
     <h3>Card types</h3>
     <label class="setting toggle">
       <input type="checkbox" ${S.settings.prodCards === false ? "" : "checked"}
@@ -1093,6 +1114,13 @@ function showSettings() {
     <h3>Danger zone</h3>
     <button class="menu-btn danger" onclick="resetProgress()">Reset all progress</button>
   `);
+}
+
+function setVoice(name) {
+  S.settings.voiceName = name || null;
+  save();
+  pickVoice();
+  speak("こんにちは。この声でいいですか。");
 }
 
 function exportProgress() {
@@ -1125,5 +1153,10 @@ document.querySelectorAll(".nav button").forEach(b => {
 });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => { });
+
+if ("speechSynthesis" in window) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
 
 showToday();
