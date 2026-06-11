@@ -1,6 +1,6 @@
-﻿// Offline-first service worker. Bump VERSION whenever any file changes
+// Offline-first service worker. Bump VERSION whenever any file changes
 // so phones pick up the new build.
-const VERSION = "v7";
+const VERSION = "v8";
 const CACHE = "nihongo-trainer-" + VERSION;
 const ASSETS = [
   ".",

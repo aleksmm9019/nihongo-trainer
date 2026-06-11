@@ -162,26 +162,90 @@ function normKana(s) {
   return out;
 }
 
+// Deconjugation: turn a form you'd hear (つくります, たべました, のんで,
+// いかない, たかかった) into candidate dictionary forms so lookup works
+// without knowing the plain form. Over-generates a little; wrong candidates
+// simply don't exist in the dictionary.
+const IROW = { り: "る", き: "く", ぎ: "ぐ", し: "す", ち: "つ", に: "ぬ", び: "ぶ", み: "む", い: "う" };
+const AROW = { わ: "う", か: "く", が: "ぐ", さ: "す", た: "つ", な: "ぬ", ば: "ぶ", ま: "む", ら: "る" };
+
+// candidates from a masu/tai stem: つくり -> つくる, たべ -> たべる, し -> する
+function stemCands(stem, out) {
+  if (!stem) return;
+  out.add(stem + "る"); // ichidan
+  const last = stem[stem.length - 1];
+  if (IROW[last]) out.add(stem.slice(0, -1) + IROW[last]); // godan
+  if (last === "し") {
+    out.add(stem.slice(0, -1) + "する");
+    if (stem.length > 1) out.add(stem.slice(0, -1)); // suru-verb noun: べんきょうします -> 勉強
+  }
+  if (stem === "き" || stem.endsWith("てき")) out.add(stem.slice(0, -1) + "くる");
+}
+
+function deconjugate(s) {
+  const out = new Set();
+  s = s.replace(/です$/, "");
+  // polite & tai families share the masu stem
+  for (const end of ["ませんでした", "ましょう", "ました", "ません", "ます", "たくなかった", "たくない", "たかった", "たい"]) {
+    if (s.endsWith(end) && s.length > end.length) { stemCands(s.slice(0, -end.length), out); break; }
+  }
+  // te/ta forms
+  for (const [suf, ends] of [["って", ["う", "つ", "る"]], ["いて", ["く"]], ["いで", ["ぐ"]], ["んで", ["ぬ", "ぶ", "む"]], ["して", ["す"]]]) {
+    for (const sf of [suf, suf.slice(0, -1) + (suf.endsWith("で") ? "だ" : "た")]) {
+      if (s.endsWith(sf) && s.length > sf.length) {
+        const base = s.slice(0, -2);
+        for (const e of ends) out.add(base + e);
+        if (sf[0] === "し") { out.add(base + "する"); if (base) out.add(base); }
+      }
+    }
+  }
+  if ((s.endsWith("て") || s.endsWith("た")) && s.length > 1) out.add(s.slice(0, -1) + "る"); // ichidan te/ta
+  if (s === "いって" || s === "いった") out.add("いく");
+  if (s === "きて" || s === "きた") out.add("くる");
+  if (s === "して" || s === "した") out.add("する");
+  // plain negative
+  for (const end of ["なかった", "ない"]) {
+    if (s.endsWith(end) && s.length > end.length) {
+      const stem = s.slice(0, -end.length);
+      out.add(stem + "る"); // ichidan
+      const last = stem[stem.length - 1];
+      if (AROW[last]) out.add(stem.slice(0, -1) + AROW[last]); // godan
+      if (last === "し") { out.add(stem.slice(0, -1) + "する"); if (stem.length > 1) out.add(stem.slice(0, -1)); }
+      break;
+    }
+  }
+  if (s === "こない" || s === "こなかった") out.add("くる");
+  // i-adjectives
+  for (const end of ["くなかった", "かった", "くない", "くて"]) {
+    if (s.endsWith(end) && s.length > end.length) { out.add(s.slice(0, -end.length) + "い"); break; }
+  }
+  out.delete(s); // the input itself is matched directly, not as a candidate
+  return out;
+}
+
 // Search the bundled dictionary by kanji, kana, romaji, or English.
+// Conjugated input falls back to deconjugated candidates (marked .via).
 function searchDict(q) {
   q = q.trim();
   if (!q) return [];
   const kana = /^[a-zA-Z\-']+$/.test(q) ? romajiToKana(q) : "";
   const qn = normKana(kana || q);
+  const cands = deconjugate(qn);
   const lower = q.toLowerCase();
   const out = [];
   for (const [w, k, m, lvl] of DICT) {
-    let score = -1;
+    let score = -1, via = false;
     const ml = m.toLowerCase();
     const kn = normKana(k);
     if (w === q || k === q || kn === qn) score = 100;
+    else if (cands.has(kn) || cands.has(w)) { score = 90; via = true; }
     else if (qn.length >= 2 && kn.startsWith(qn)) score = 70 - (kn.length - qn.length);
     else if (w.startsWith(q) || k.startsWith(q)) score = 65;
     else if (lower.length >= 3 && ml.includes(lower)) {
       score = ml === lower || ml.startsWith(lower + ",") ? 60
         : ("," + ml).includes("," + lower) || (" " + ml).includes(" " + lower) ? 40 : 15;
     }
-    if (score >= 0) out.push({ w, k, m, lvl, score });
+    if (score >= 0) out.push({ w, k, m, lvl, score, via });
   }
   return out.sort((a, b) => b.score - a.score || b.lvl - a.lvl).slice(0, 12);
 }
@@ -832,7 +896,7 @@ function showAdd() {
   INBOX_PICK = null;
   render(`
     <h2>＋ Add a word</h2>
-    <p class="muted">Type it any way you like — <i>oyogu</i>, およぐ, 泳ぐ, or "to swim". No time? <b>Later</b> saves it to look up when you're free.</p>
+    <p class="muted">Type it any way you like — <i>oyogu</i>, およぐ, 泳ぐ, or "to swim". Conjugated forms work too: <i>tsukurimasu</i> finds 作る. No time? <b>Later</b> saves it to look up when you're free.</p>
     <form class="add-form" onsubmit="doSearch(); return false">
       <input type="text" id="q" placeholder="oyogu" autocomplete="off" autocapitalize="none">
       <button type="submit" class="menu-btn primary slim">Search</button>
@@ -867,7 +931,7 @@ function doSearch() {
   const hits = searchDict(q);
   document.getElementById("confirm").innerHTML = "";
   document.getElementById("results").innerHTML = hits.length
-    ? hits.map((h, i) => `
+    ? (hits[0].via ? `<p class="muted">That looks like a conjugated form — these are the dictionary forms:</p>` : "") + hits.map((h, i) => `
       <button class="hit" onclick="pickHit(${i})">
         <span class="row-jp">${esc(h.w)}</span>
         <span class="row-kana">${esc(h.k)}</span>
