@@ -100,9 +100,17 @@ eq(searchDict("oyogu")[0].w, "泳ぐ", "dict search romaji");
 eq(searchDict("泳ぐ")[0].k, "およぐ", "dict search kanji");
 eq(searchDict("to swim")[0].w, "泳ぐ", "dict search english");
 eq(searchDict("").length, 0, "dict search empty");
+// kana normalization: katakana + long-vowel mark match by-ear romaji
+eq(normKana("コーヒー"), "こおひい", "normKana katakana long vowel");
+eq(normKana("およぐ"), "およぐ", "normKana hiragana untouched");
+eq(searchDict("koohii")[0].w, "コーヒー", "dict search loanword by ear");
+eq(searchDict("ko-hi-")[0].w, "コーヒー", "dict search loanword with - for ー");
 // dictionary integrity
-eq(DICT.length > 7000, true, "dict has 7000+ entries");
-eq(DICT.filter(d => d.length !== 4 || ![1,2,3,4,5].includes(d[3])).length, 0, "dict rows well-formed");
+eq(DICT.length > 20000, true, "dict has 20000+ entries");
+eq(DICT.filter(d => d.length !== 4 || ![0,1,2,3,4,5].includes(d[3])).length, 0, "dict rows well-formed");
+for (const lvl of [5,4,3,2,1,0]) eq(DICT.some(d => d[3] === lvl), true, "dict has N" + lvl + " entries");
+// inbox
+eq(Array.isArray(S.inbox), true, "inbox initialised");
 // speech text generation
 eq(stripRuby("私[わたし]は学生[がくせい]です"), "私は学生です", "stripRuby");
 eq(particleSpeakText({s:"水[みず]＿飲[の]みます。", a:"を"}), "水を飲みます。", "particle speak text");

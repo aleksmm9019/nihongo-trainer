@@ -145,18 +145,37 @@ function romajiToKana(input) {
   return out;
 }
 
-// Search the bundled JLPT dictionary by kanji, kana, romaji, or English.
+// Normalize a reading for by-ear matching: katakana -> hiragana, and the
+// long-vowel mark expanded (コーヒー -> こおひい), so romaji input like
+// "koohii" finds katakana loanwords.
+const KANA_ROWS = [["あかがさざただなはばぱまやらわゃゎぁ", "あ"], ["いきぎしじちぢにひびぴみりぃ", "い"], ["うくぐすずつづぬふぶぷむゆるゅぅゔ", "う"], ["えけげせぜてでねへべぺめれぇ", "え"], ["おこごそぞとどのほぼぽもよろをょぉ", "お"]];
+function normKana(s) {
+  s = s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  let out = "";
+  for (const ch of s) {
+    if (ch === "ー" && out) {
+      const prev = out[out.length - 1];
+      const row = KANA_ROWS.find(([set]) => set.includes(prev));
+      out += row ? row[1] : ch;
+    } else out += ch;
+  }
+  return out;
+}
+
+// Search the bundled dictionary by kanji, kana, romaji, or English.
 function searchDict(q) {
   q = q.trim();
   if (!q) return [];
   const kana = /^[a-zA-Z\-']+$/.test(q) ? romajiToKana(q) : "";
+  const qn = normKana(kana || q);
   const lower = q.toLowerCase();
   const out = [];
   for (const [w, k, m, lvl] of DICT) {
     let score = -1;
     const ml = m.toLowerCase();
-    if (w === q || k === q || (kana && k === kana)) score = 100;
-    else if (kana && kana.length >= 2 && k.startsWith(kana)) score = 70 - (k.length - kana.length);
+    const kn = normKana(k);
+    if (w === q || k === q || kn === qn) score = 100;
+    else if (qn.length >= 2 && kn.startsWith(qn)) score = 70 - (kn.length - qn.length);
     else if (w.startsWith(q) || k.startsWith(q)) score = 65;
     else if (lower.length >= 3 && ml.includes(lower)) {
       score = ml === lower || ml.startsWith(lower + ",") ? 60
@@ -240,6 +259,7 @@ function load() {
     if (raw) {
       const d = JSON.parse(raw);
       if (!d.custom) d.custom = { vocab: [], verbs: [] }; // migration from pre-AddWord saves
+      if (!d.inbox) d.inbox = [];                         // migration from pre-inbox saves
       return d;
     }
   } catch (e) { /* corrupted -> start fresh */ }
@@ -248,6 +268,7 @@ function load() {
     intro: {},          // dateStr -> {vocab, kanji} new cards introduced that day
     log: {},            // dateStr -> {reviews, correct, grammar, grammarCorrect}
     custom: { vocab: [], verbs: [] }, // user-added words; vocab ids start with "c"
+    inbox: [],          // words jotted down to look up later: {id, text}
     settings: { newVocab: 8, newKanji: 3, furigana: true, audio: true, autoSpeak: true, prodCards: true, listenCards: true },
   };
 }
@@ -802,18 +823,28 @@ function answerDrill(idx) {
 
 /* ---------- add word ---------- */
 
-let ADD = null; // currently selected dictionary hit
+let ADD = null;         // currently selected dictionary hit
+let INBOX_PICK = null;  // inbox item being resolved -> cleared from inbox once added
 
 function showAdd() {
   setTab("");
   ADD = null;
+  INBOX_PICK = null;
   render(`
     <h2>＋ Add a word</h2>
-    <p class="muted">Type it any way you like — <i>oyogu</i>, およぐ, 泳ぐ, or "to swim".</p>
+    <p class="muted">Type it any way you like — <i>oyogu</i>, およぐ, 泳ぐ, or "to swim". No time? <b>Later</b> saves it to look up when you're free.</p>
     <form class="add-form" onsubmit="doSearch(); return false">
       <input type="text" id="q" placeholder="oyogu" autocomplete="off" autocapitalize="none">
       <button type="submit" class="menu-btn primary slim">Search</button>
+      <button type="button" class="menu-btn slim" onclick="stashWord()">📥 Later</button>
     </form>
+    ${S.inbox.length ? `
+    <div class="inbox">
+      <div class="muted">📥 Saved for later — tap to look up:</div>
+      <div class="chips">${S.inbox.map(it => `
+        <button type="button" class="chip" onclick="pickInbox('${it.id}')">${esc(it.text)}</button><button type="button" class="chip x" onclick="dropInbox('${it.id}')" title="Remove">✕</button>`).join("")}
+      </div>
+    </div>` : ""}
     <div id="results"></div>
     <div id="confirm"></div>
     <details class="manual">
@@ -826,6 +857,7 @@ function showAdd() {
       </div>
       <button class="menu-btn primary slim" onclick="addManual()">Add card</button>
     </details>
+    <p class="credit">Dictionary data: JMdict (EDRDG licence) · ${DICT.length.toLocaleString()} words</p>
   `);
   document.getElementById("q").focus();
 }
@@ -840,10 +872,32 @@ function doSearch() {
         <span class="row-jp">${esc(h.w)}</span>
         <span class="row-kana">${esc(h.k)}</span>
         <span class="row-en">${esc(h.m)}</span>
-        <span class="lvl">N${h.lvl}</span>
+        <span class="lvl">${h.lvl ? "N" + h.lvl : "•"}</span>
       </button>`).join("")
-    : `<p class="muted">Nothing found in the JLPT N5–N1 dictionary. You can add it manually below, or check <a href="https://jisho.org/search/${encodeURIComponent(q)}" target="_blank">Jisho</a>.</p>`;
+    : `<p class="muted">Nothing found in the dictionary — and it knows ${DICT.length.toLocaleString()} words, so double-check the spelling. You can save it for later with 📥, add it manually below, or check <a href="https://jisho.org/search/${encodeURIComponent(q)}" target="_blank">Jisho</a>.</p>`;
   window.__hits = hits;
+}
+
+function stashWord() {
+  const q = document.getElementById("q").value.trim();
+  if (!q) return;
+  S.inbox.push({ id: "i" + Date.now().toString(36), text: q });
+  save();
+  showAdd(); // re-render: the new chip appearing is the confirmation
+}
+
+function pickInbox(id) {
+  const it = S.inbox.find(x => x.id === id);
+  if (!it) return;
+  INBOX_PICK = id;
+  document.getElementById("q").value = it.text;
+  doSearch();
+}
+
+function dropInbox(id) {
+  S.inbox = S.inbox.filter(x => x.id !== id);
+  save();
+  showAdd();
 }
 
 function pickHit(i) {
@@ -895,6 +949,7 @@ function addCustomWord(jp, kana, en, verbType, level) {
   S.custom.vocab.push({ id, jp, kana, en, level });
   S.cards[id] = newCardState(); // due immediately — shows up in today's reviews
   if (verbType && verbType !== "none") S.custom.verbs.push({ dict: jp, kana, en, type: verbType, custom: true });
+  if (INBOX_PICK) { S.inbox = S.inbox.filter(x => x.id !== INBOX_PICK); INBOX_PICK = null; } // resolved
   save();
   render(`
     <div class="finish">

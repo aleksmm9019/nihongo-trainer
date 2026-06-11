@@ -227,6 +227,12 @@ h3 { margin: 20px 0 10px; color: var(--muted); font-size: 0.9rem; text-transform
 .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
 .manual { padding: 0 14px 14px; }
 .manual input { margin: 8px 0; }
+.inbox { margin: 4px 0 14px; }
+.inbox .muted { margin-bottom: 2px; }
+.inbox .chips { justify-content: flex-start; }
+.inbox .chip:not(.x) { border-radius: 20px 0 0 20px; }
+.inbox .chip.x { margin-left: -8px; border-left: none; border-radius: 0 20px 20px 0; padding: 8px 10px; color: var(--bad); }
+.credit { color: var(--muted); font-size: 0.75rem; text-align: center; margin-top: 22px; opacity: 0.7; }
 .del {
   background: none; border: none; color: var(--bad); font-size: 1rem;
   cursor: pointer; padding: 2px 6px; flex: none;
