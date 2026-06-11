@@ -185,6 +185,8 @@ function stemCands(stem, out) {
 function deconjugate(s) {
   const out = new Set();
   s = s.replace(/です$/, "");
+  // progressive ～ている/～ています collapses to the te-form, handled below
+  s = s.replace(/([てで])(いる|います|いた|いました|いません|いない|いなかった|いませんでした)$/, "$1");
   // polite & tai families share the masu stem
   for (const end of ["ませんでした", "ましょう", "ました", "ません", "ます", "たくなかった", "たくない", "たかった", "たい"]) {
     if (s.endsWith(end) && s.length > end.length) { stemCands(s.slice(0, -end.length), out); break; }
